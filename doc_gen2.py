@@ -158,7 +158,7 @@ def init_gemini_client():
             st.error("Gemini API key not found. Please set it in Streamlit secrets or environment variables.")
             st.stop()
         genai.configure(api_key=api_key)
-        return genai.GenerativeModel('gemini-1.5-flash')
+        return genai.GenerativeModel('gemini-2.5-flash')
     except Exception as e:
         st.error(f"Error initializing Gemini client: {str(e)}")
         return None
