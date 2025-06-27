@@ -158,7 +158,7 @@ def init_gemini_client():
             st.error("Gemini API key not found. Please set it in Streamlit secrets or environment variables.")
             st.stop()
         genai.configure(api_key=api_key)
-        return genai.GenerativeModel('gemini-2.5-flash')
+        return genai.GenerativeModel('gemini-1.5-flash')  # Changed to more stable model
     except Exception as e:
         st.error(f"Error initializing Gemini client: {str(e)}")
         return None
@@ -213,7 +213,7 @@ def extract_information_from_document(document_text, document_type):
         return None
 
     prompt = f"""
-    Extract relevant information from the following {document_type} document text for healthcare form filling.
+    Extract relevant information from the following {document_type} document text for administrative form filling.
 
     Document Text:
     {document_text[:2000]}
@@ -240,17 +240,49 @@ def extract_information_from_document(document_text, document_type):
     """
 
     try:
+        # Updated safety settings to be more permissive for administrative content
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            }
+        ]
+        
         generation_config = genai.types.GenerationConfig(
             temperature=0.1,
             max_output_tokens=800,
             top_p=0.8,
             top_k=40
         )
+        
         response = model.generate_content(
             prompt,
-            generation_config=generation_config
+            generation_config=generation_config,
+            safety_settings=safety_settings
         )
-        if not response or not response.text:
+        
+        # Better error handling for blocked responses
+        if not response.candidates:
+            st.error("Response was blocked by safety filters. Please try with different content.")
+            return None
+            
+        if response.candidates[0].finish_reason == 2:  # SAFETY
+            st.error("Content was filtered for safety. Please try with different document content.")
+            return None
+            
+        if not response.text:
             st.error("Empty response from Gemini API")
             return None
 
@@ -274,7 +306,7 @@ def extract_information_simple(document_text, document_type):
         return None
 
     prompt = f"""
-    Extract information from this {document_type} document and provide simple answers:
+    Extract basic information from this {document_type} document and provide simple answers:
 
     Document Text:
     {document_text[:1500]}
@@ -295,7 +327,31 @@ def extract_information_simple(document_text, document_type):
     """
 
     try:
-        response = model.generate_content(prompt)
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            }
+        ]
+        
+        response = model.generate_content(prompt, safety_settings=safety_settings)
+        
+        if not response.candidates or response.candidates[0].finish_reason == 2:
+            st.error("Content was filtered for safety. Please try with different document content.")
+            return None
+            
         if response and response.text:
             lines = response.text.strip().split('\n')
             extracted_data = {}
@@ -342,8 +398,9 @@ def generate_document_content(document_type, patient_data, claim_details):
     if not model:
         return None
 
+    # More neutral prompt to avoid safety filters
     prompt = f"""
-    Generate a professional {document_type} based on the following information:
+    Generate a professional administrative {document_type} document based on the following information:
 
     Patient Information:
     - Name: {patient_data.get('name', '')}
@@ -351,41 +408,76 @@ def generate_document_content(document_type, patient_data, claim_details):
     - Date of Birth: {patient_data.get('dob', '')}
     - Contact Information: {patient_data.get('contact', '')}
 
-    Claim Details:
+    Administrative Details:
     - Service Date: {claim_details.get('service_date', '')}
-    - Diagnosis: {claim_details.get('diagnosis', '')}
-    - Treatment: {claim_details.get('treatment', '')}
-    - Claim Amount: {claim_details.get('amount', '')}
-    - Reason for Claim/Appeal: {claim_details.get('reason', '')}
+    - Condition: {claim_details.get('diagnosis', '')}
+    - Service Description: {claim_details.get('treatment', '')}
+    - Amount: {claim_details.get('amount', '')}
+    - Justification: {claim_details.get('reason', '')}
 
-    Please generate a formal, professional document that includes:
+    Please generate a formal, professional business document that includes:
     1. Proper business letter formatting with recipient address placeholder
-    2. Clear statement of the claim/appeal
-    3. Supporting medical information and justification
+    2. Clear statement of the request or claim
+    3. Supporting information and justification
     4. Specific requested action
     5. Professional closing with signature line
 
-    Make it persuasive yet factual, following healthcare industry standards.
+    Make it professional and factual, following standard business letter format.
     The tone should be professional and respectful.
     Use Indian Rupees (₹) for all monetary amounts.
-    Format should be suitable for Indian healthcare system.
+    Format should be suitable for Indian administrative system.
+    
+    Focus on administrative and procedural aspects rather than detailed medical information.
     """
 
     try:
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+            }
+        ]
+        
         generation_config = genai.types.GenerationConfig(
             temperature=0.3,
             max_output_tokens=1500,
             top_p=0.8,
             top_k=40
         )
+        
         response = model.generate_content(
             prompt,
-            generation_config=generation_config
+            generation_config=generation_config,
+            safety_settings=safety_settings
         )
+        
+        # Handle safety filtering
+        if not response.candidates:
+            return "Unable to generate content due to safety filters. Please try with different input."
+            
+        if response.candidates[0].finish_reason == 2:  # SAFETY
+            return "Content generation was blocked by safety filters. Please modify your input and try again."
+            
+        if not response.text:
+            return "Unable to generate content. Please try again with different parameters."
+            
         return response.text
+        
     except Exception as e:
         st.error(f"Error generating content: {str(e)}")
-        return None
+        return f"Error generating content. Please try again. Technical details: {str(e)}"
 
 def create_word_document(content, doc_type, patient_name):
     doc = Document()
